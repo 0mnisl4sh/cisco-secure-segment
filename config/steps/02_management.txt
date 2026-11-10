@@ -1,0 +1,100 @@
+! ==================================================================
+! Защита управления маршрутизатором
+! Команды вводятся в режиме глобальной конфигурации (configure terminal).
+! <ПАРОЛЬ> - подставить свой пароль не короче 10 символов.
+! ==================================================================
+
+! --- Пароли и учётная запись администратора ---
+! Пароли короче 10 символов отклоняются
+security passwords min-length 10
+! Пароль привилегированного режима, хеш scrypt (тип 9)
+enable algorithm-type scrypt secret <ПАРОЛЬ>
+! Персональная учётная запись администратора, уровень 15
+username admin privilege 15 algorithm-type scrypt secret <ПАРОЛЬ>
+! Скрыть оставшиеся пароли открытого типа (тип 7)
+service password-encryption
+
+! --- Настройка SSH ---
+ip domain name lab.local
+! Пара ключей RSA 2048 бит с именем R1.lab.local
+crypto key generate rsa general-keys modulus 2048
+ip ssh rsa keypair-name R1.lab.local
+! Только SSH версии 2
+ip ssh version 2
+! 60 секунд на вход, не более 3 попыток пароля за соединение
+ip ssh time-out 60
+ip ssh authentication-retries 3
+! Группа Диффи-Хеллмана не менее 2048 бит
+ip ssh dh min size 2048
+! Записывать события SSH в журнал
+ip ssh logging events
+! Разрешённые алгоритмы
+ip ssh server algorithm encryption aes256-ctr aes192-ctr aes128-ctr
+ip ssh server algorithm mac hmac-sha2-512 hmac-sha2-256
+ip ssh server algorithm kex diffie-hellman-group14-sha1
+! Разрывать зависшие TCP-соединения
+service tcp-keepalives-in
+service tcp-keepalives-out
+
+! --- Ограничение доступа к линиям vty ---
+ip access-list standard MGMT-ACCESS
+ permit 192.168.10.0 0.0.0.255
+ deny   any log
+!
+line vty 0 4
+ ! Подключаться можно только с адресов из списка
+ access-class MGMT-ACCESS in
+ ! Только SSH; Telnet не принимается
+ transport input ssh
+ ! Вход по локальным учётным записям
+ login local
+ ! Закрывать сеанс после 5 минут бездействия
+ exec-timeout 5 0
+
+! --- Блокировка входа при подборе пароля ---
+! 3 неудачи за 60 с -> тихий режим на 120 с
+login block-for 120 attempts 3 within 60
+! Записывать неудачные и успешные входы
+login on-failure log
+login on-success log
+
+! --- Отключение служб, предупреждение, защита консоли ---
+! Встроенный веб-сервер
+no ip http server
+no ip http secure-server
+! CDP сообщает соседям модель и версию устройства
+no cdp run
+! Пакеты с маршрутом, заданным отправителем
+no ip source-route
+! Устаревшие службы
+no service pad
+no ip bootp server
+!
+banner login ^
+WARNING: Authorized access only.
+All activity on this device is logged and monitored.
+Disconnect now if you are not an authorized user.
+^
+!
+line con 0
+ login local
+ exec-timeout 10 0
+
+! --- Журнал изменений конфигурации и роль аудитора ---
+! Номер и время в каждой записи журнала
+service sequence-numbers
+service timestamps log datetime msec
+!
+archive
+ log config
+  ! Записывать каждую команду конфигурации
+  logging enable
+  logging size 200
+  ! Дублировать записи в системный журнал
+  notify syslog contenttype plaintext
+  ! Не показывать пароли
+  hidekeys
+!
+! Аудитор: уровень 5, из дополнительных команд - только просмотр журнала
+privilege exec level 5 show logging
+username auditor privilege 5 algorithm-type scrypt secret <ПАРОЛЬ>

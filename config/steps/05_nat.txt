@@ -1,0 +1,28 @@
+! ==================================================================
+! Выход в Интернет и публикация веб-сервера
+! Команды вводятся в режиме глобальной конфигурации (configure terminal).
+! ==================================================================
+
+! --- Трансляция адресов с перегрузкой (PAT) ---
+interface GigabitEthernet0/0
+ ip nat inside
+interface GigabitEthernet0/1
+ ip nat inside
+interface GigabitEthernet0/2
+ ip nat inside
+interface GigabitEthernet0/3
+ ip nat outside
+!
+! Чьи адреса транслировать
+ip access-list standard NAT-INSIDE
+ remark Inside networks translated by PAT
+ permit 192.168.10.0 0.0.0.255
+ permit 192.168.11.0 0.0.0.255
+ permit 192.168.20.0 0.0.0.255
+!
+! Все перечисленные сети выходят под адресом интерфейса Gi0/3
+ip nat inside source list NAT-INSIDE interface GigabitEthernet0/3 overload
+
+! --- Статическая трансляция адреса веб-сервера ---
+! 192.168.20.10 <-> 203.0.113.3, в обе стороны
+ip nat inside source static 192.168.20.10 203.0.113.3

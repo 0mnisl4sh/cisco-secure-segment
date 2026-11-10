@@ -1,0 +1,62 @@
+# ==================================================================
+# Узел DMZ-WEB (ubuntu-0): сеть
+# ==================================================================
+# /etc/netplan/99-lab.yaml
+network:
+  version: 2
+  ethernets:
+    ens2:
+      dhcp4: false
+      addresses: [192.168.20.10/24]
+      routes:
+        - to: default
+          via: 192.168.20.1
+      nameservers:
+        addresses: [8.8.8.8]
+
+# ==================================================================
+# Узел DMZ-WEB: веб-сервер nginx
+# ==================================================================
+apt-get update
+apt-get install -y nginx
+echo 'DMZ-WEB nginx OK' > /var/www/html/index.html
+
+# Самоподписанный сертификат для HTTPS
+openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
+  -keyout /etc/ssl/private/dmz-web.key \
+  -out /etc/ssl/certs/dmz-web.crt -subj "/CN=203.0.113.3"
+
+# /etc/nginx/conf.d/dmz-https.conf
+server {
+    listen 443 ssl;
+    server_name _;
+    ssl_certificate /etc/ssl/certs/dmz-web.crt;
+    ssl_certificate_key /etc/ssl/private/dmz-web.key;
+    root /var/www/html;
+    index index.html;
+}
+
+# /etc/nginx/conf.d/00-server-tokens.conf - не сообщать версию
+server_tokens off;
+
+nginx -t
+systemctl reload nginx
+
+# ==================================================================
+# Узел DMZ-WEB: приём журнала маршрутизатора
+# ==================================================================
+timedatectl set-timezone Europe/Moscow
+
+# /etc/rsyslog.d/10-r1.conf
+module(load="imudp")
+template(name="R1Fmt" type="string"
+  string="%timegenerated:::date-rfc3339% %fromhost-ip% %rawmsg-after-pri%\n")
+# В файл попадают только сообщения с адреса R1
+ruleset(name="FromR1") {
+  if $fromhost-ip == "192.168.20.1" then
+    action(type="omfile" file="/var/log/r1.log" template="R1Fmt")
+}
+input(type="imudp" port="514" ruleset="FromR1")
+
+rsyslogd -N1
+systemctl restart rsyslog

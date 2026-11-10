@@ -1,0 +1,144 @@
+! ==================================================================
+! Межсетевой экран на зонах
+! Команды вводятся в режиме глобальной конфигурации (configure terminal).
+! ==================================================================
+
+! --- Зоны, списки доступа и карты классов ---
+zone security USERS
+zone security SERVERS
+zone security DMZ
+zone security OUTSIDE
+!
+ip access-list extended ACL-USERS-SRV
+ remark USERS to SERVERS: admin and service ports only
+ permit tcp 192.168.10.0 0.0.0.255 192.168.11.0 0.0.0.255 eq 22
+ permit tcp 192.168.10.0 0.0.0.255 192.168.11.0 0.0.0.255 eq www
+ permit tcp 192.168.10.0 0.0.0.255 192.168.11.0 0.0.0.255 eq 443
+ permit icmp 192.168.10.0 0.0.0.255 192.168.11.0 0.0.0.255 echo
+ip access-list extended ACL-DMZ-WEB
+ remark OUTSIDE to DMZ: published web server only (real address)
+ permit tcp any host 192.168.20.10 eq www
+ permit tcp any host 192.168.20.10 eq 443
+!
+! Любой трафик TCP, UDP, ICMP (достаточно одного совпадения)
+class-map type inspect match-any CM-ALL
+ match protocol tcp
+ match protocol udp
+ match protocol icmp
+class-map type inspect match-all CM-USERS-SRV
+ match access-group name ACL-USERS-SRV
+class-map type inspect match-all CM-DMZ-WEB
+ match access-group name ACL-DMZ-WEB
+
+! --- Карты политик для обмена между сегментами ---
+! Аудит: записывать начало и конец каждой сессии
+parameter-map type inspect PAR-AUDIT
+ audit-trail on
+!
+! Разрешить всё с отслеживанием сессий
+policy-map type inspect PM-INSPECT-ALL
+ class type inspect CM-ALL
+  inspect
+ class class-default
+  drop log
+! Пользователи -> внутренние серверы: только служебные порты
+policy-map type inspect PM-USERS-SRV
+ class type inspect CM-USERS-SRV
+  inspect
+ class class-default
+  drop log
+! Интернет -> DMZ: только веб-сервер, с аудитом сессий
+policy-map type inspect PM-OUT-DMZ
+ class type inspect CM-DMZ-WEB
+  inspect PAR-AUDIT
+ class class-default
+  drop log
+! Полный запрет с записью в журнал
+policy-map type inspect PM-DROP-LOG
+ class class-default
+  drop log
+
+! --- Пары зон между сегментами и включение интерфейсов в зоны ---
+! Разрешённые направления
+zone-pair security ZP-USERS-SERVERS source USERS destination SERVERS
+ service-policy type inspect PM-USERS-SRV
+zone-pair security ZP-USERS-DMZ source USERS destination DMZ
+ service-policy type inspect PM-INSPECT-ALL
+zone-pair security ZP-USERS-OUTSIDE source USERS destination OUTSIDE
+ service-policy type inspect PM-INSPECT-ALL
+zone-pair security ZP-SERVERS-OUTSIDE source SERVERS destination OUTSIDE
+ service-policy type inspect PM-INSPECT-ALL
+zone-pair security ZP-DMZ-OUTSIDE source DMZ destination OUTSIDE
+ service-policy type inspect PM-INSPECT-ALL
+zone-pair security ZP-OUTSIDE-DMZ source OUTSIDE destination DMZ
+ service-policy type inspect PM-OUT-DMZ
+! Запрещённые направления
+zone-pair security ZP-SERVERS-USERS source SERVERS destination USERS
+ service-policy type inspect PM-DROP-LOG
+zone-pair security ZP-SERVERS-DMZ source SERVERS destination DMZ
+ service-policy type inspect PM-DROP-LOG
+zone-pair security ZP-DMZ-USERS source DMZ destination USERS
+ service-policy type inspect PM-DROP-LOG
+zone-pair security ZP-DMZ-SERVERS source DMZ destination SERVERS
+ service-policy type inspect PM-DROP-LOG
+zone-pair security ZP-OUTSIDE-USERS source OUTSIDE destination USERS
+ service-policy type inspect PM-DROP-LOG
+zone-pair security ZP-OUTSIDE-SERVERS source OUTSIDE destination SERVERS
+ service-policy type inspect PM-DROP-LOG
+!
+interface GigabitEthernet0/0
+ zone-member security SERVERS
+interface GigabitEthernet0/1
+ zone-member security USERS
+interface GigabitEthernet0/2
+ zone-member security DMZ
+interface GigabitEthernet0/3
+ zone-member security OUTSIDE
+
+! --- Политики и пары зон для трафика самого маршрутизатора ---
+ip access-list extended ACL-MGMT-SSH
+ remark USERS to R1: SSH only (vty access-class still applies)
+ permit tcp 192.168.10.0 0.0.0.255 any eq 22
+class-map type inspect match-all CM-MGMT-SSH
+ match protocol tcp
+ match access-group name ACL-MGMT-SSH
+class-map type inspect match-any CM-ICMP
+ match protocol icmp
+!
+! Пользователи -> R1: SSH и ping
+policy-map type inspect PM-USERS-SELF
+ class type inspect CM-MGMT-SSH
+  inspect
+ class type inspect CM-ICMP
+  inspect
+ class class-default
+  drop log
+! Серверы и DMZ -> R1: только ping
+policy-map type inspect PM-INSIDE-SELF
+ class type inspect CM-ICMP
+  inspect
+ class class-default
+  drop log
+! R1 -> любая зона: собственный трафик с отслеживанием сессий
+policy-map type inspect PM-SELF-OUT
+ class type inspect CM-ALL
+  inspect
+ class class-default
+  drop log
+!
+zone-pair security ZP-OUTSIDE-SELF source OUTSIDE destination self
+ service-policy type inspect PM-DROP-LOG
+zone-pair security ZP-SELF-OUTSIDE source self destination OUTSIDE
+ service-policy type inspect PM-SELF-OUT
+zone-pair security ZP-SERVERS-SELF source SERVERS destination self
+ service-policy type inspect PM-INSIDE-SELF
+zone-pair security ZP-SELF-SERVERS source self destination SERVERS
+ service-policy type inspect PM-SELF-OUT
+zone-pair security ZP-DMZ-SELF source DMZ destination self
+ service-policy type inspect PM-INSIDE-SELF
+zone-pair security ZP-SELF-DMZ source self destination DMZ
+ service-policy type inspect PM-SELF-OUT
+zone-pair security ZP-USERS-SELF source USERS destination self
+ service-policy type inspect PM-USERS-SELF
+zone-pair security ZP-SELF-USERS source self destination USERS
+ service-policy type inspect PM-SELF-OUT

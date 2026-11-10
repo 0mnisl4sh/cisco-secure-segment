@@ -1,0 +1,43 @@
+! ==================================================================
+! Защита от подмены адресов
+! Команды вводятся в режиме глобальной конфигурации (configure terminal).
+! ==================================================================
+
+! --- Проверка обратного пути и список OUTSIDE-IN ---
+interface GigabitEthernet0/0
+ ip verify unicast source reachable-via rx
+interface GigabitEthernet0/1
+ ip verify unicast source reachable-via rx
+interface GigabitEthernet0/2
+ ip verify unicast source reachable-via rx
+interface GigabitEthernet0/3
+ ip verify unicast source reachable-via rx allow-default
+!
+ip access-list extended OUTSIDE-IN
+ remark Anti-spoofing: private sources (RFC 1918)
+ deny   ip 10.0.0.0 0.255.255.255 any log
+ deny   ip 172.16.0.0 0.15.255.255 any log
+ deny   ip 192.168.0.0 0.0.255.255 any log
+ remark Anti-spoofing: special-use sources
+ deny   ip 0.0.0.0 0.255.255.255 any log
+ deny   ip 127.0.0.0 0.255.255.255 any log
+ deny   ip 169.254.0.0 0.0.255.255 any log
+ deny   ip 224.0.0.0 15.255.255.255 any log
+ deny   ip 240.0.0.0 15.255.255.255 any log
+ remark Anti-spoofing: our own addresses
+ deny   ip host 203.0.113.1 any log
+ deny   ip host 203.0.113.3 any log
+ remark Everything else passes
+ permit ip any any
+!
+interface GigabitEthernet0/3
+ ip access-group OUTSIDE-IN in
+
+! --- Настройки внешнего интерфейса ---
+interface GigabitEthernet0/3
+ no ip redirects
+ no ip unreachables
+ no ip proxy-arp
+
+! --- Защищённая копия конфигурации ---
+secure boot-config

@@ -1,0 +1,341 @@
+! R1, Cisco IOSv 15.9(3)M12. Итоговая конфигурация (show running-config).
+! Значения хешей паролей скрыты: <ХЕШ>.
+! Баннеры exec и incoming входят в образ IOSv и в работе не менялись.
+!
+Building configuration...
+
+Current configuration : 10187 bytes
+!
+! Last configuration change at 18:41:52 MSK Sun Nov 8 2026 by admin
+! NVRAM config last updated at 18:44:17 MSK Sun Nov 8 2026 by admin
+!
+version 15.9
+no service pad
+service tcp-keepalives-in
+service tcp-keepalives-out
+service timestamps debug datetime msec localtime show-timezone year
+service timestamps log datetime msec localtime show-timezone year
+service password-encryption
+service sequence-numbers
+!
+hostname R1
+!
+boot-start-marker
+boot-end-marker
+!
+!
+security passwords min-length 10
+logging buffered 64000 informational
+logging rate-limit 100 except warnings
+enable secret 9 $9$<ХЕШ>
+!
+no aaa new-model
+!
+!
+!
+clock timezone MSK 3 0
+mmi polling-interval 60
+no mmi auto-configure
+no mmi pvc
+mmi snmp-timeout 180
+!
+!
+!
+!
+!
+no ip source-route
+!
+!
+!
+!
+!
+!
+no ip bootp server
+no ip domain lookup
+ip domain name lab.local
+ip cef
+login block-for 120 attempts 3 within 60
+login on-failure log
+login on-success log
+no ipv6 cef
+!
+parameter-map type inspect PAR-AUDIT
+ audit-trail on
+multilink bundle-name authenticated
+!
+!
+!
+!
+archive
+ log config
+  logging enable
+  logging size 200
+  notify syslog contenttype plaintext
+  hidekeys
+username admin privilege 15 secret 9 $9$<ХЕШ>
+username auditor privilege 5 secret 9 $9$<ХЕШ>
+secure boot-config
+!
+redundancy
+!
+no cdp run
+!
+!
+class-map type inspect match-all CM-DMZ-WEB
+ match access-group name ACL-DMZ-WEB
+class-map type inspect match-all CM-USERS-SRV
+ match access-group name ACL-USERS-SRV
+class-map type inspect match-any CM-ICMP
+ match protocol icmp
+class-map type inspect match-all CM-MGMT-SSH
+ match protocol tcp
+ match access-group name ACL-MGMT-SSH
+class-map type inspect match-any CM-ALL
+ match protocol tcp
+ match protocol udp
+ match protocol icmp
+!
+policy-map type inspect PM-INSIDE-SELF
+ class type inspect CM-ICMP
+  inspect
+ class class-default
+  drop log
+policy-map type inspect PM-USERS-SELF
+ class type inspect CM-MGMT-SSH
+  inspect
+ class type inspect CM-ICMP
+  inspect
+ class class-default
+  drop log
+policy-map type inspect PM-OUT-DMZ
+ class type inspect CM-DMZ-WEB
+  inspect PAR-AUDIT
+ class class-default
+  drop log
+policy-map type inspect PM-INSPECT-ALL
+ class type inspect CM-ALL
+  inspect
+ class class-default
+  drop log
+policy-map type inspect PM-USERS-SRV
+ class type inspect CM-USERS-SRV
+  inspect
+ class class-default
+  drop log
+policy-map type inspect PM-SELF-OUT
+ class type inspect CM-ALL
+  inspect
+ class class-default
+  drop log
+policy-map type inspect PM-DROP-LOG
+ class class-default
+  drop log
+!
+zone security USERS
+zone security SERVERS
+zone security DMZ
+zone security OUTSIDE
+zone-pair security ZP-USERS-SERVERS source USERS destination SERVERS
+ service-policy type inspect PM-USERS-SRV
+zone-pair security ZP-USERS-DMZ source USERS destination DMZ
+ service-policy type inspect PM-INSPECT-ALL
+zone-pair security ZP-USERS-OUTSIDE source USERS destination OUTSIDE
+ service-policy type inspect PM-INSPECT-ALL
+zone-pair security ZP-SERVERS-OUTSIDE source SERVERS destination OUTSIDE
+ service-policy type inspect PM-INSPECT-ALL
+zone-pair security ZP-DMZ-OUTSIDE source DMZ destination OUTSIDE
+ service-policy type inspect PM-INSPECT-ALL
+zone-pair security ZP-OUTSIDE-DMZ source OUTSIDE destination DMZ
+ service-policy type inspect PM-OUT-DMZ
+zone-pair security ZP-SERVERS-USERS source SERVERS destination USERS
+ service-policy type inspect PM-DROP-LOG
+zone-pair security ZP-SERVERS-DMZ source SERVERS destination DMZ
+ service-policy type inspect PM-DROP-LOG
+zone-pair security ZP-DMZ-USERS source DMZ destination USERS
+ service-policy type inspect PM-DROP-LOG
+zone-pair security ZP-DMZ-SERVERS source DMZ destination SERVERS
+ service-policy type inspect PM-DROP-LOG
+zone-pair security ZP-OUTSIDE-USERS source OUTSIDE destination USERS
+ service-policy type inspect PM-DROP-LOG
+zone-pair security ZP-OUTSIDE-SERVERS source OUTSIDE destination SERVERS
+ service-policy type inspect PM-DROP-LOG
+zone-pair security ZP-OUTSIDE-SELF source OUTSIDE destination self
+ service-policy type inspect PM-DROP-LOG
+zone-pair security ZP-SELF-OUTSIDE source self destination OUTSIDE
+ service-policy type inspect PM-SELF-OUT
+zone-pair security ZP-SERVERS-SELF source SERVERS destination self
+ service-policy type inspect PM-INSIDE-SELF
+zone-pair security ZP-SELF-SERVERS source self destination SERVERS
+ service-policy type inspect PM-SELF-OUT
+zone-pair security ZP-DMZ-SELF source DMZ destination self
+ service-policy type inspect PM-INSIDE-SELF
+zone-pair security ZP-SELF-DMZ source self destination DMZ
+ service-policy type inspect PM-SELF-OUT
+zone-pair security ZP-USERS-SELF source USERS destination self
+ service-policy type inspect PM-USERS-SELF
+zone-pair security ZP-SELF-USERS source self destination USERS
+ service-policy type inspect PM-SELF-OUT
+!
+interface GigabitEthernet0/0
+ description INSIDE-SERVERS
+ ip address 192.168.11.1 255.255.255.0
+ ip nat inside
+ ip virtual-reassembly in
+ ip verify unicast source reachable-via rx
+ zone-member security SERVERS
+ duplex auto
+ speed auto
+ media-type rj45
+!
+interface GigabitEthernet0/1
+ description INSIDE-USERS
+ ip address 192.168.10.1 255.255.255.0
+ ip nat inside
+ ip virtual-reassembly in
+ ip verify unicast source reachable-via rx
+ zone-member security USERS
+ duplex auto
+ speed auto
+ media-type rj45
+!
+interface GigabitEthernet0/2
+ description DMZ
+ ip address 192.168.20.1 255.255.255.0
+ ip nat inside
+ ip virtual-reassembly in
+ ip verify unicast source reachable-via rx
+ zone-member security DMZ
+ duplex auto
+ speed auto
+ media-type rj45
+!
+interface GigabitEthernet0/3
+ description OUTSIDE
+ ip address 203.0.113.1 255.255.255.248
+ ip access-group OUTSIDE-IN in
+ no ip redirects
+ no ip unreachables
+ no ip proxy-arp
+ ip nat outside
+ ip virtual-reassembly in
+ ip verify unicast source reachable-via rx allow-default
+ zone-member security OUTSIDE
+ duplex auto
+ speed auto
+ media-type rj45
+!
+ip forward-protocol nd
+!
+!
+no ip http server
+no ip http secure-server
+ip nat inside source list NAT-INSIDE interface GigabitEthernet0/3 overload
+ip nat inside source static 192.168.20.10 203.0.113.3
+ip route 0.0.0.0 0.0.0.0 203.0.113.2
+ip ssh time-out 60
+ip ssh rsa keypair-name R1.lab.local
+ip ssh logging events
+ip ssh version 2
+ip ssh server algorithm mac hmac-sha2-512 hmac-sha2-256
+ip ssh server algorithm encryption aes256-ctr aes192-ctr aes128-ctr
+ip ssh server algorithm kex diffie-hellman-group14-sha1
+!
+ip access-list standard MGMT-ACCESS
+ permit 192.168.10.0 0.0.0.255
+ deny   any log
+ip access-list standard NAT-INSIDE
+ remark Inside networks translated by PAT
+ permit 192.168.10.0 0.0.0.255
+ permit 192.168.11.0 0.0.0.255
+ permit 192.168.20.0 0.0.0.255
+ip access-list standard NTP-PEERS
+ remark NTP servers R1 may sync with
+ permit 185.125.190.56
+ permit 185.125.190.57
+ permit 162.159.200.1
+!
+ip access-list extended ACL-DMZ-WEB
+ remark OUTSIDE to DMZ: published web server only (real address)
+ permit tcp any host 192.168.20.10 eq www
+ permit tcp any host 192.168.20.10 eq 443
+ip access-list extended ACL-MGMT-SSH
+ remark USERS to R1: SSH only (vty access-class still applies)
+ permit tcp 192.168.10.0 0.0.0.255 any eq 22
+ip access-list extended ACL-USERS-SRV
+ remark USERS to SERVERS: admin and service ports only
+ permit tcp 192.168.10.0 0.0.0.255 192.168.11.0 0.0.0.255 eq 22
+ permit tcp 192.168.10.0 0.0.0.255 192.168.11.0 0.0.0.255 eq www
+ permit tcp 192.168.10.0 0.0.0.255 192.168.11.0 0.0.0.255 eq 443
+ permit icmp 192.168.10.0 0.0.0.255 192.168.11.0 0.0.0.255 echo
+ip access-list extended OUTSIDE-IN
+ remark Anti-spoofing: private sources (RFC 1918)
+ deny   ip 10.0.0.0 0.255.255.255 any log
+ deny   ip 172.16.0.0 0.15.255.255 any log
+ deny   ip 192.168.0.0 0.0.255.255 any log
+ remark Anti-spoofing: special-use sources
+ deny   ip 0.0.0.0 0.255.255.255 any log
+ deny   ip 127.0.0.0 0.255.255.255 any log
+ deny   ip 169.254.0.0 0.0.255.255 any log
+ deny   ip 224.0.0.0 15.255.255.255 any log
+ deny   ip 240.0.0.0 15.255.255.255 any log
+ remark Anti-spoofing: our own addresses
+ deny   ip host 203.0.113.1 any log
+ deny   ip host 203.0.113.3 any log
+ remark Everything else passes (who-can-go-where is stage 5)
+ permit ip any any
+!
+ip access-list logging interval 10
+logging source-interface GigabitEthernet0/2
+logging host 192.168.20.10
+ipv6 ioam timestamp
+!
+!
+control-plane host
+!
+!
+control-plane
+!
+privilege exec level 5 show logging
+privilege exec level 5 show
+banner exec ^C
+**************************************************************************
+* IOSv is strictly limited to use for evaluation, demonstration and IOS  *
+* education. IOSv is provided as-is and is not supported by Cisco's      *
+* Technical Advisory Center. Any use or disclosure, in whole or in part, *
+* of the IOSv Software or Documentation to any third party for any       *
+* purposes is expressly prohibited except as otherwise authorized by     *
+* Cisco in writing.                                                      *
+**************************************************************************^C
+banner incoming ^C
+**************************************************************************
+* IOSv is strictly limited to use for evaluation, demonstration and IOS  *
+* education. IOSv is provided as-is and is not supported by Cisco's      *
+* Technical Advisory Center. Any use or disclosure, in whole or in part, *
+* of the IOSv Software or Documentation to any third party for any       *
+* purposes is expressly prohibited except as otherwise authorized by     *
+* Cisco in writing.                                                      *
+**************************************************************************^C
+banner login ^C
+WARNING: Authorized access only.
+All activity on this device is logged and monitored.
+Disconnect now if you are not an authorized user.
+^C
+!
+line con 0
+ logging synchronous
+ login local
+line aux 0
+line vty 0 4
+ access-class MGMT-ACCESS in
+ exec-timeout 5 0
+ login local
+ transport input ssh
+!
+no scheduler allocate
+ntp logging
+ntp access-group peer NTP-PEERS
+ntp server 185.125.190.56 prefer
+ntp server 185.125.190.57
+ntp server 162.159.200.1
+!
+end

@@ -1,0 +1,37 @@
+! ==================================================================
+! Время и журнал
+! Команды вводятся в режиме глобальной конфигурации (configure terminal).
+! ==================================================================
+
+! --- Часовой пояс и формат меток времени ---
+! Пояс MSK, смещение +3 часа
+clock timezone MSK 3 0
+! Метка: дата с годом, миллисекунды, местное время, название пояса
+service timestamps log datetime msec localtime show-timezone year
+service timestamps debug datetime msec localtime show-timezone year
+
+! --- Журнал: буфер, сервер и ограничение потока ---
+! Буфер 64000 байт, уровни 0-6
+logging buffered 64000 informational
+! Сервер журналов; на сервер уходят уровни 0-6 (значение по умолчанию)
+logging host 192.168.20.10
+! Адрес отправителя - интерфейс в сторону сервера
+logging source-interface GigabitEthernet0/2
+! Не более 100 сообщений в секунду, кроме warnings и важнее
+logging rate-limit 100 except warnings
+! Записи списков доступа - не чаще раза в 10 мс
+ip access-list logging interval 10
+
+! --- Синхронизация времени по NTP ---
+ntp logging
+ntp server 185.125.190.56 prefer
+ntp server 185.125.190.57
+ntp server 162.159.200.1
+!
+ip access-list standard NTP-PEERS
+ remark NTP servers R1 may sync with
+ permit host 185.125.190.56
+ permit host 185.125.190.57
+ permit host 162.159.200.1
+! Обмен только с перечисленными серверами
+ntp access-group peer NTP-PEERS

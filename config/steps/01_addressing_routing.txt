@@ -1,0 +1,33 @@
+! ==================================================================
+! Адресация и маршрутизация
+! Команды вводятся в режиме глобальной конфигурации (configure terminal).
+! ==================================================================
+
+! --- Базовая настройка R1 ---
+hostname R1
+! Не искать опечатки в командах как имена узлов в DNS
+no ip domain lookup
+!
+interface GigabitEthernet0/0
+ description INSIDE-SERVERS
+ ip address 192.168.11.1 255.255.255.0
+ no shutdown
+interface GigabitEthernet0/1
+ description INSIDE-USERS
+ ip address 192.168.10.1 255.255.255.0
+ no shutdown
+interface GigabitEthernet0/2
+ description DMZ
+ ip address 192.168.20.1 255.255.255.0
+ no shutdown
+interface GigabitEthernet0/3
+ description OUTSIDE
+ ip address 203.0.113.1 255.255.255.248
+ no shutdown
+!
+! Маршрут по умолчанию: всё, что не в своих сетях, - провайдеру
+ip route 0.0.0.0 0.0.0.0 203.0.113.2
+!
+! Сообщения журнала не разрывают вводимую команду
+line con 0
+ logging synchronous
